@@ -1,0 +1,26 @@
+# ===== ESP-IDF =====
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# ===== CMake =====
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# ===== IDE / Tools =====
+.vscode/
+.cmake/
+
+# ===== Python =====
+__pycache__/
+*.pyc
+
+# ===== OS =====
+Thumbs.db
+desktop.ini
+
+# ===== Logs =====
+*.log

@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS 
+    "main.c" 
+    "tasks/imu_task.c" 
+    "drivers/imu_driver.c"
+    "tasks/ultrason_task.c"
+    "drivers/ultrason_driver.c"
+    "tasks/aggregator_task.c"
+    "tasks/logger_task.c"
+    "drivers/nvs_driver.c"
+    INCLUDE_DIRS 
+    ".")

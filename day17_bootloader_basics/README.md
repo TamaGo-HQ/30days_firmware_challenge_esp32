@@ -320,3 +320,382 @@ https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/bootloade
 https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/partition-tables.html?utm_source=chatgpt.com
 
 https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/ota.html?utm_source=chatgpt.com
+
+---
+
+## Exercices
+
+### Exercice 1 - Observe the Bootloader’s Decision
+
+**What you should observe by the end**
+
+You will **prove** that:
+
+The bootloader:
+
+- Chooses the partition
+
+On first flash:
+
+- `otadata` is empty
+- The **factory partition boots**
+1. Configure the Partition Table
+
+Open menuconfig
+
+```bash
+idf.py menuconfig
+
+```
+
+Set:
+
+```
+PartitionTable  →
+PartitionTableType →
+    Factory app, two OTA definitions
+
+```
+
+Save & exit.
+
+1. Minimal App Code (Boot + OTA State)
+
+Put this in your `main.c` 
+
+```css
+#include <stdio.h>
+#include "esp_system.h"
+#include "esp_log.h"
+#include "esp_ota_ops.h"
+
+static const char *TAG = "BOOT_OBSERVER";
+
+void app_main(void)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+
+    esp_ota_img_states_t ota_state;
+    esp_err_t err = esp_ota_get_state_partition(running, &ota_state);
+
+    ESP_LOGI(TAG, "Running partition:");
+    ESP_LOGI(TAG, "  Label: %s", running->label);
+    ESP_LOGI(TAG, "  Type:  %d", running->type);
+    ESP_LOGI(TAG, "  Subtype: %d", running->subtype);
+    ESP_LOGI(TAG, "  Address: 0x%lx", running->address);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "OTA state: %d", ota_state);
+    } else {
+        ESP_LOGW(TAG, "OTA state not found (err=%s)", esp_err_to_name(err));
+    }
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+```
+
+The [esp_partition_t](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/storage/partition.html#_CPPv415esp_partition_t)  structure contains public members such as the partition type, subtype, adress, label, size …. 
+
+```css
+const esp_partition_t *esp_ota_get_running_partition(void)
+```
+
+Gets the partition info of the currently running app. 
+
+**Returns** Pointer to info for partition structure, or NULL if no partition is found or flash read operation failed.
+
+```css
+esp_err_t esp_ota_get_state_partition(const esp_partition_t *partition, esp_ota_img_states_t *ota_state)
+```
+
+Returns state for given partition.
+
+**Returns:**
+
+- ESP_OK: Successful.
+- ESP_ERR_INVALID_ARG: partition or ota_state arguments were NULL.
+- ESP_ERR_NOT_SUPPORTED: partition is not ota.
+- ESP_ERR_NOT_FOUND: Partition table does not have otadata or state was not found for given partition.
+
+**Observations**
+
+```css
+I (49) boot: Partition Table:
+I (52) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00004000
+I (65) boot:  1 otadata          OTA data         01 00 0000d000 00002000
+I (71) boot:  2 phy_init         RF data          01 01 0000f000 00001000
+I (78) boot:  3 factory          factory app      00 00 00010000 00100000
+I (84) boot:  4 ota_0            OTA app          00 10 00110000 00100000
+I (91) boot:  5 ota_1            OTA app          00 11 00210000 00100000
+I (97) boot: End of partition table
+I (101) boot: Defaulting to factory image
+---
+I (186) boot: Loaded app from partition at offset 0x10000
+---
+I (292) main_task: Calling app_main()
+I (292) BOOT_OBSERVER: Running partition:
+I (292) BOOT_OBSERVER:   Label: factory
+I (292) BOOT_OBSERVER:   Type:  0
+I (292) BOOT_OBSERVER:   Subtype: 0
+I (292) BOOT_OBSERVER:   Address: 0x10000
+W (302) BOOT_OBSERVER: OTA state not found (err=ESP_ERR_NOT_SUPPORTED)
+```
+
+On booting, we observe that the bootloader chooses to run the factory app partition by default as we did not specify which OTA app the code should run.
+
+The error “ESP_ERR_NOT_SUPPORTED” is returned by the **esp_ota_get_state_partition()** function because the partition passed to the function is not an OTA partition.
+
+### Exercice 2 : Trigger OTA State Transisitons Manually
+
+We will **force the ESP32 to rollback** by:
+
+- Booting a new OTA image
+- Letting it enter `PENDING_VERIFY`
+- Resetting **before** confirmation
+
+Then we’ll repeat and **confirm it properly**.
+
+```css
+Factory app (current)
+   ↓ OTA update
+OTA_0 (NEW → PENDING_VERIFY)
+   ↓ reset before confirmation
+OTA_0 (ABORTED)
+   ↓
+Rollback to Factory
+```
+
+1. Enable application rollback support in Bootloader config → Application Rollback vie menuconfig
+2. Flash factory app
+
+```css
+
+/*  ==========first factory app to flash ========== */
+static const char *TAG = "FACTORY_APP";
+
+void app_main(void)
+{
+    // Get the running partition
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    ESP_LOGI(TAG, "Running partition: %s", running->label);
+
+    // Get the boot partition (what the bootloader will select next)
+    const esp_partition_t *boot_partition = esp_ota_get_boot_partition();
+    if (boot_partition != NULL) {
+        ESP_LOGI(TAG, "Next boot partition: %s at offset 0x%X",
+                 boot_partition->label, boot_partition->address);
+    } else {
+        ESP_LOGW(TAG, "Boot partition not found!");
+    }
+
+    // Infinite loop for observation
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+```
+
+Build and flash. 
+
+1. Flash this OTA app to OTA_0 partition
+
+You can write this code in the same main.c we just used for the factory app, just make sure to comment out the previous code.
+
+```css
+/*  ========== ota 0 ========== */
+static const char *TAG = "OTA_0_APP";
+
+void app_main(void)
+{
+    // Get the running partition
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    ESP_LOGI(TAG, "Running partition: %s", running->label);
+
+    // Get OTA state 
+    esp_ota_img_states_t ota_state;
+    esp_err_t err = esp_ota_get_state_partition(running, &ota_state);
+    if (err == ESP_OK) {
+         ESP_LOGI(TAG, "OTA state of running partition: %s", ota_state_to_str(ota_state));
+    } else {
+        ESP_LOGW(TAG, "No OTA state for running partition (factory or unsupported)");
+    }
+
+    // Get the boot partition (what the bootloader will select next)
+    const esp_partition_t *boot_partition = esp_ota_get_boot_partition();
+    if (boot_partition != NULL) {
+        ESP_LOGI(TAG, "Next boot partition: %s at offset 0x%X",
+                 boot_partition->label, boot_partition->address);
+    } else {
+        ESP_LOGW(TAG, "Boot partition not found!");
+    }
+
+    // Optional: simulate app confirming itself as valid
+    //esp_err_t err_validation = esp_ota_mark_app_valid_cancel_rollback();
+    //if (err_validation == ESP_OK) {
+    //     ESP_LOGI(TAG, "OTA_0 app state validated");
+    //} else {
+    //    ESP_LOGW(TAG, "failed to validate OTA_0 app state");
+    //}
+
+    // Infinite loop for observation
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+```
+
+To flash it, run this in your cmd line
+
+```css
+esptool.py -p COM9 write_flash 0x110000 build/day17_bootloader_basics.bin
+```
+
+0x11000 corresponds to the offset of my ota_0 app
+
+```css
+I (49) boot: Partition Table:
+I (52) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00004000
+I (65) boot:  1 otadata          OTA data         01 00 0000d000 00002000
+I (71) boot:  2 phy_init         RF data          01 01 0000f000 00001000
+I (78) boot:  3 factory          factory app      00 00 00010000 00100000
+I (84) boot:  4 ota_0            OTA app          00 10 00110000 00100000
+I (91) boot:  5 ota_1            OTA app          00 11 00210000 00100000
+I (97) boot: End of partition table
+```
+
+run this command to check yours
+
+```css
+idf.py partition-table
+```
+
+For now the bootloader would still choose to load your  factory app. to make it switch to the ota_0 partition, we flash this new factory_app
+
+1. flash this new factory app,  use [idf.py](http://idf.py) -p <your_port> flash monitor as usual, espidf will flash this to the factory app by default.
+
+```css
+
+// /*  ========== second factor app to flash ========== */
+static const char *TAG = "FACTORY_APP_TO_OTA_0";
+
+void app_main(void)
+{
+    // Get the running partition
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    ESP_LOGI(TAG, "Running partition: %s", running->label);
+
+    // Get the boot partition (what the bootloader will select next)
+    const esp_partition_t *boot_partition = esp_ota_get_boot_partition();
+    if (boot_partition != NULL) {
+        ESP_LOGI(TAG, "Next boot partition: %s at offset 0x%X",
+                 boot_partition->label, boot_partition->address);
+    } else {
+        ESP_LOGW(TAG, "Boot partition not found!");
+    }
+
+    // Find the OTA_0 partition
+    const esp_partition_t *ota_0_partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+
+    if (ota_0_partition != NULL) {
+        ESP_LOGI(TAG, "Switching boot partition to: %s", ota_0_partition->label);
+
+        esp_err_t res = esp_ota_set_boot_partition(ota_0_partition);
+        if (res == ESP_OK) {
+            ESP_LOGI(TAG, "Boot partition set successfully.");
+        } else {
+            ESP_LOGE(TAG, "Failed to set boot partition! err=%d", res);
+        }
+    } else {
+        ESP_LOGE(TAG, "OTA_0 partition not found!");
+    }
+
+    // Get the boot partition (what the bootloader will select next)
+    boot_partition = esp_ota_get_boot_partition();
+    if (boot_partition != NULL) {
+        ESP_LOGI(TAG, "Next boot partition: %s at offset 0x%X",
+                 boot_partition->label, boot_partition->address);
+    } else {
+        ESP_LOGW(TAG, "Boot partition not found!");
+    }
+
+    // Infinite loop for observation
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+```
+
+You ll notice that with every reset, you’ll keep switching between factory app and ota_0
+
+That’s bacause we commented out the *esp_ota_mark_app_valid_cancel_rollback() function. So our ota_0 app is stuck in* PENDING_VERIFY state.
+
+```css
+I (289) OTA_0_APP: OTA state of running partition: PENDING_VERIFY
+```
+
+And as we reset the board while the app is not yet verified, it changes to ESP_OTA_IMG_ABORTED and the bootloader would not choose it for the next boot. It will instead rollback to the factory app.
+
+For more info about App OTA State, check out the [documentation](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/ota.html#app-ota-state)
+
+1. validate your OTA app
+
+you can now comment out the *esp_ota_mark_app_valid_cancel_rollback()* block rebuilt it, and flash it to your ota_0 partition.
+
+Now the bootloader would always boot from OTA_0 as it was successfully set to the valid state
+
+```css
+I (295) main_task: Calling app_main()
+I (295) OTA_0_APP: Running partition: ota_0
+I (295) OTA_0_APP: OTA state of running partition: VALID
+I (295) OTA_0_APP: Next boot partition: ota_0 at offset 0x110000
+I (305) OTA_0_APP: OTA_0 app state validated
+```
+
+<aside>
+🫠
+
+Note: if the Application Rollback was disabled in menuconfig, the state of our OTA app would be set to UNDEFINED instead of INVALID. And in my case, the bootloader still ran the OTA on the next boot instead of factory even if it is invalid…
+
+</aside>
+
+One unanswered question I still have about this:
+
+Given that an application is flashed to OTA_0, and otadata is erased (using erase_otadata from otatool.py).
+
+I flash a factory app that does not contain the OTA_0 switching block pasted below, and as epected the factory app boots.
+
+```css
+// Find the OTA_0 partition
+    const esp_partition_t *ota_0_partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+
+    if (ota_0_partition != NULL) {
+        ESP_LOGI(TAG, "Switching boot partition to: %s", ota_0_partition->label);
+
+        esp_err_t res = esp_ota_set_boot_partition(ota_0_partition);
+        if (res == ESP_OK) {
+            ESP_LOGI(TAG, "Boot partition set successfully.");
+        } else {
+            ESP_LOGE(TAG, "Failed to set boot partition! err=%d", res);
+        }
+    } else {
+        ESP_LOGE(TAG, "OTA_0 partition not found!");
+    }
+```
+
+If we comment out this block and flash (reminder that otadata has been erased), the ota_0 app is exectuted from the first boot. While it is expected that the factory app runs then on the second boot the ota_0 runs…
+
+Still a mistery to me. My possible hypothesis is that for some reason I could not see the first boot’s logs. It is worth noting that this experiment was done with the rollback disabled.
+
+Future points/exercices
+
+- [ ]  factory reset path through a gpio trigger
+- [ ]  a wireless ota (as it is supposed to be XD)
+- [ ]  explore the [otadata.py](http://otadata.py) tool

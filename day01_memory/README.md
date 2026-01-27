@@ -50,9 +50,12 @@ Address ranges (simplified):
 * `0x4000_0000 – 0x4FFF_FFFF` → Instruction bus
 * `≥ 0x5000_0000` → Shared / peripheral / RTC regions
 
----
+![System Architecture](../assets/system_architecture.jpg)
+
 
 ### Embedded Memory Overview
+
+![Embedded Memory](../assets/embedded_memory.jpg)
 
 | Memory        | Size   | Purpose                             |
 | ------------- | ------ | ----------------------------------- |
@@ -61,9 +64,10 @@ Address ranges (simplified):
 | RTC FAST      | 8 KB   | Fast retained memory (PRO_CPU only) |
 | RTC SLOW      | 8 KB   | Low-power retained memory           |
 
----
 
 ### Flash, Cache, and XIP
+
+![External Memory](../assets/external_memory.jpg)
 
 * Program code lives in **external SPI Flash**
 * Flash is **slow**
@@ -80,8 +84,6 @@ This allows **Execute In Place (XIP)**:
 
 * Flash code cannot execute
 * Only **IRAM code** can run
-
----
 
 ### IRAM vs DRAM
 

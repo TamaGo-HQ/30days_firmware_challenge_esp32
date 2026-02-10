@@ -166,3 +166,253 @@ That’s it for today, see you tomorrow.
 Resources:
 
 [MPU-6000-Datasheet1.pdf](https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Datasheet1.pdf)
+
+### Day 2 : Data Logging & Signal Visualization
+
+## End-of-day deliverables (non-negotiable)
+
+By the end of Day 2, you should have:
+
+- IMU running at **≥100 Hz**
+- Logged data for **4 motion classes**
+- At least **one plot per motion**
+- Clear intuition:
+    - “this is noise”
+    - “this is vibration”
+    - “this is impact”
+
+**Task 1 : Increase sampling rate**
+
+Motion classification needs **time resolution,** 2 Hz is useless for vibration & impact.
+
+- we’ll opt for **100 Hz** (safe, simple)
+
+Change delay to:
+
+```c
+vTaskDelay(pdMS_TO_TICKS(10)); // 100 Hz
+
+```
+
+**Task 2 : Print Signal Magnitude**
+
+We will:
+
+1. Compute **accel magnitude**
+2. Compute **gyro magnitude**
+3. Attach a **timestamp**
+4. Print everything in **CSV format**
+
+We’ll first include math support.
+
+```c
+#include <math.h>
+```
+
+Then we’ll compute the magnitude inside  the while loop after scaling.
+
+```c
+// Accelerometer magnitude (in g)
+float accel_mag = sqrtf(
+    ax_g * ax_g +
+    ay_g * ay_g +
+    az_g * az_g
+);
+
+// Gyroscope magnitude (in °/s)
+float gyro_mag = sqrtf(
+    gx_dps * gx_dps +
+    gy_dps * gy_dps +
+    gz_dps * gz_dps
+);
+```
+
+We add a time stamp
+
+```c
+#include "esp_timer.h" // add this on top of your file
+int64_t timestamp_ms = esp_timer_get_time() / 1000;
+
+```
+
+Finally we print our data in CSV format
+
+```c
+printf("%lld,%.4f,%.4f\n",
+       timestamp_ms,
+       accel_mag,
+       gyro_mag);
+```
+
+Example output:
+
+```c
+34710,1.0352,3.1577
+34720,1.0374,3.3325
+34730,1.0390,3.3164
+34740,1.0375,3.3658
+34750,1.0379,3.2720
+```
+
+**Task 3 : Log Data to CSV**
+
+We’ll log **raw motion data** so we can *see* the signals before doing any DSP or classification.
+We will record **4 CSV files**, one per motion class.
+
+Recording Procedure:
+
+For **each motion class**:
+
+Stationary
+
+- Place IMU on table
+- Do not touch
+- Record **10–15 s**
+
+ Slow movement
+
+- Gentle hand motion
+- No shaking
+- 10–15 s
+
+Fast movement / vibration
+
+- Shake continuously
+- Same intensity
+- 10–15 s
+
+Impact / sudden stop
+
+- Short taps on table
+- Leave pauses between taps
+- 10–15 s
+
+For this, we’ll create a **single FreeRTOS task** that:
+
+1. Logs IMU data for **15 seconds**
+2. Prints:
+    
+    ```
+    ---done---
+    ```
+    
+3. Waits **5 seconds**
+4. Repeats this **4 times total**
+5. Then **stops logging forever**
+
+```c
+void imu_logger_task(void *arg)
+{
+    const int LOG_TIME_MS   = 15000;
+    const int PAUSE_TIME_MS = 5000;
+    const int SEGMENTS      = 4;
+
+    for (int seg = 0; seg < SEGMENTS; seg++) {
+
+        int64_t start_time = esp_timer_get_time() / 1000;
+
+        while ((esp_timer_get_time() / 1000 - start_time) < LOG_TIME_MS) {
+
+            // --- Read IMU here ---
+            // ax, ay, az in g
+            // gx, gy, gz in deg/s
+
+            float accel_mag = sqrtf(ax*ax + ay*ay + az*az);
+            float gyro_mag  = sqrtf(gx*gx + gy*gy + gz*gz);
+            int64_t time_ms = esp_timer_get_time() / 1000;
+
+            // CSV output
+            printf("%lld,%.3f,%.3f\n", time_ms, accel_mag, gyro_mag);
+
+            vTaskDelay(pdMS_TO_TICKS(10)); // 100 Hz
+        }
+
+        printf("---done---\n");
+
+        if (seg < SEGMENTS - 1) {
+            vTaskDelay(pdMS_TO_TICKS(PAUSE_TIME_MS));
+        }
+    }
+
+    // Stop task forever
+    vTaskDelete(NULL);
+}
+
+```
+
+Before starting the task:
+
+```c
+esp_log_level_set("*", ESP_LOG_NONE);
+```
+
+This ensures **pure CSV output**.
+
+For each block:
+
+- Copy **from first CSV line**
+- Stop at `--done---`
+- Paste into one CSV file
+
+The resulting csv files are saved under the motion_data folder where you’ll also find the python file plot_motion.py
+
+```c
+import csv
+import matplotlib.pyplot as plt
+
+def load_csv(filename):
+    time = []
+    accel = []
+    gyro = []
+
+    with open(filename, 'r') as f:
+        reader = csv.reader(f)
+        header = next(reader)  # skip header
+
+        for row in reader:
+            if len(row) != 3:
+                continue
+
+            t, a, g = row
+            time.append(float(t) / 1000.0)   # ms → seconds
+            accel.append(float(a))
+            gyro.append(float(g))
+
+    return time, accel, gyro
+
+def plot_motion(filename, title):
+    time, accel, gyro = load_csv(filename)
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(time, accel, label="Accel magnitude (g)")
+    plt.plot(time, gyro, label="Gyro magnitude (°/s)")
+
+    plt.xlabel("Time (s)")
+    plt.ylabel("Magnitude")
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    files = {
+        "stationary.csv": "Stationary",
+        "slow.csv": "Slow movement",
+        "fast.csv": "Fast movement / vibration",
+        "impact.csv": "Impact / sudden stop",
+    }
+
+    for filename, title in files.items():
+        plot_motion(filename, title)
+
+```
+
+To run it, make sure matplotlib is installed by running 
+
+```bash
+pip show matplotlib
+```
+
+Once the .py works, you’ll get 4 graphs depicting the variation of the acceleration and rotation magnitudes (in g and dps).

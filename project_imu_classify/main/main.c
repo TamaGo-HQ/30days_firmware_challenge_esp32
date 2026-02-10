@@ -129,12 +129,66 @@ void imu_wake_up(void)
     i2c_cmd_link_delete(cmd);
 }
 
+void imu_logger_task(void *arg)
+{
+    const int LOG_TIME_MS   = 15000;
+    const int PAUSE_TIME_MS = 5000;
+    const int SEGMENTS      = 4;
+    uint8_t raw[READ_LEN];
+    for (int seg = 0; seg < SEGMENTS; seg++) {
+
+        int64_t start_time = esp_timer_get_time() / 1000;
+
+        while ((esp_timer_get_time() / 1000 - start_time) < LOG_TIME_MS) {
+
+             esp_err_t ret = imu_read_bytes(ACCEL_START_REG, raw, READ_LEN);
+             if (ret == ESP_OK) {
+
+                // -------- Accelerometer --------
+                int16_t ax = (raw[0] << 8) | raw[1];
+                int16_t ay = (raw[2] << 8) | raw[3];
+                int16_t az = (raw[4] << 8) | raw[5];
+
+                float ax_g = ax / 16384.0f;
+                float ay_g = ay / 16384.0f;
+                float az_g = az / 16384.0f;
+
+                // -------- Gyroscope --------
+                int16_t gx = (raw[8]  << 8) | raw[9];
+                int16_t gy = (raw[10] << 8) | raw[11];
+                int16_t gz = (raw[12] << 8) | raw[13];
+
+                float gx_dps = gx / 131.0f;
+                float gy_dps = gy / 131.0f;
+                float gz_dps = gz / 131.0f;
+
+                float accel_mag = sqrtf(ax_g*ax_g + ay_g*ay_g + az_g*az_g);
+                float gyro_mag  = sqrtf(gx_dps*gx_dps + gy_dps*gy_dps + gz_dps*gz_dps);
+                int64_t time_ms = esp_timer_get_time() / 1000;
+
+                // CSV output
+                printf("%lld,%.3f,%.3f\n", time_ms, accel_mag, gyro_mag);}
+
+            vTaskDelay(pdMS_TO_TICKS(10)); // 100 Hz
+        }
+
+        printf("---done---\n");
+
+        if (seg < SEGMENTS - 1) {
+            vTaskDelay(pdMS_TO_TICKS(PAUSE_TIME_MS));
+        }
+    }
+
+    // Stop task forever
+    vTaskDelete(NULL);
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Initializing I2C...");
     i2c_master_init();
     imu_wake_up();
-    uint8_t raw[READ_LEN];
+    // uint8_t raw[READ_LEN];
     for (uint8_t addr = 0x08; addr <= 0x77; addr++) {
         i2c_cmd_handle_t cmd = i2c_cmd_link_create();
         i2c_master_start(cmd);
@@ -146,51 +200,60 @@ void app_main(void)
             ESP_LOGI("I2C_SCAN", "Found device at 0x%02X", addr);
     }
     }
+    esp_log_level_set("*", ESP_LOG_NONE);
+    xTaskCreate(
+        imu_logger_task,     // task function
+        "imu_logger",        // name
+        4096,                // stack size
+        NULL,                // parameters
+        5,                   // priority
+        NULL                 // task handle
+    );
 
 
-    while (1) {
-        esp_err_t ret = imu_read_bytes(ACCEL_START_REG, raw, READ_LEN);
-        if (ret == ESP_OK) {
+    // while (1) {
+    //     esp_err_t ret = imu_read_bytes(ACCEL_START_REG, raw, READ_LEN);
+    //     if (ret == ESP_OK) {
 
-            // -------- Accelerometer --------
-            int16_t ax = (raw[0] << 8) | raw[1];
-            int16_t ay = (raw[2] << 8) | raw[3];
-            int16_t az = (raw[4] << 8) | raw[5];
+    //         // -------- Accelerometer --------
+    //         int16_t ax = (raw[0] << 8) | raw[1];
+    //         int16_t ay = (raw[2] << 8) | raw[3];
+    //         int16_t az = (raw[4] << 8) | raw[5];
 
-            float ax_g = ax / 16384.0f;
-            float ay_g = ay / 16384.0f;
-            float az_g = az / 16384.0f;
+    //         float ax_g = ax / 16384.0f;
+    //         float ay_g = ay / 16384.0f;
+    //         float az_g = az / 16384.0f;
 
-            // -------- Gyroscope --------
-            int16_t gx = (raw[8]  << 8) | raw[9];
-            int16_t gy = (raw[10] << 8) | raw[11];
-            int16_t gz = (raw[12] << 8) | raw[13];
+    //         // -------- Gyroscope --------
+    //         int16_t gx = (raw[8]  << 8) | raw[9];
+    //         int16_t gy = (raw[10] << 8) | raw[11];
+    //         int16_t gz = (raw[12] << 8) | raw[13];
 
-            float gx_dps = gx / 131.0f;
-            float gy_dps = gy / 131.0f;
-            float gz_dps = gz / 131.0f;
+    //         float gx_dps = gx / 131.0f;
+    //         float gy_dps = gy / 131.0f;
+    //         float gz_dps = gz / 131.0f;
 
-            // Accelerometer magnitude (in g)
-            float accel_mag = sqrtf(
-                ax_g * ax_g +
-                ay_g * ay_g +
-                az_g * az_g
-            );
+    //         // Accelerometer magnitude (in g)
+    //         float accel_mag = sqrtf(
+    //             ax_g * ax_g +
+    //             ay_g * ay_g +
+    //             az_g * az_g
+    //         );
 
-            // Gyroscope magnitude (in °/s)
-            float gyro_mag = sqrtf(
-                gx_dps * gx_dps +
-                gy_dps * gy_dps +
-                gz_dps * gz_dps
-            );
+    //         // Gyroscope magnitude (in °/s)
+    //         float gyro_mag = sqrtf(
+    //             gx_dps * gx_dps +
+    //             gy_dps * gy_dps +
+    //             gz_dps * gz_dps
+    //         );
 
-            int64_t timestamp_ms = esp_timer_get_time() / 1000;
+    //         int64_t timestamp_ms = esp_timer_get_time() / 1000;
 
-            printf("%lld,%.4f,%.4f\n", timestamp_ms, accel_mag, gyro_mag);
-        } else {
-            ESP_LOGE(TAG, "Failed to read IMU: %s", esp_err_to_name(ret));
-        }
+    //         printf("%lld,%.4f,%.4f\n", timestamp_ms, accel_mag, gyro_mag);
+    //     } else {
+    //         ESP_LOGE(TAG, "Failed to read IMU: %s", esp_err_to_name(ret));
+    //     }
 
-        vTaskDelay(pdMS_TO_TICKS(10)); // keep same rate for now
-    }
+    //     vTaskDelay(pdMS_TO_TICKS(10)); // keep same rate for now
+    // }
 }

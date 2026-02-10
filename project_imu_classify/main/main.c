@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include "driver/i2c.h"
 #include "esp_log.h"
+#include <math.h>
+#include "esp_timer.h"
+
 
 #define I2C_MASTER_SCL_IO           22      // change to your GPIO
 #define I2C_MASTER_SDA_IO           21      // change to your GPIO
@@ -142,7 +145,7 @@ void app_main(void)
         if (ret == ESP_OK) {
             ESP_LOGI("I2C_SCAN", "Found device at 0x%02X", addr);
     }
-}
+    }
 
 
     while (1) {
@@ -167,16 +170,27 @@ void app_main(void)
             float gy_dps = gy / 131.0f;
             float gz_dps = gz / 131.0f;
 
-            ESP_LOGI(TAG,
-                "A[g]: X=%.2f Y=%.2f Z=%.2f | G[dps]: X=%.2f Y=%.2f Z=%.2f",
-                ax_g, ay_g, az_g,
-                gx_dps, gy_dps, gz_dps
+            // Accelerometer magnitude (in g)
+            float accel_mag = sqrtf(
+                ax_g * ax_g +
+                ay_g * ay_g +
+                az_g * az_g
             );
 
+            // Gyroscope magnitude (in °/s)
+            float gyro_mag = sqrtf(
+                gx_dps * gx_dps +
+                gy_dps * gy_dps +
+                gz_dps * gz_dps
+            );
+
+            int64_t timestamp_ms = esp_timer_get_time() / 1000;
+
+            printf("%lld,%.4f,%.4f\n", timestamp_ms, accel_mag, gyro_mag);
         } else {
             ESP_LOGE(TAG, "Failed to read IMU: %s", esp_err_to_name(ret));
         }
 
-        vTaskDelay(pdMS_TO_TICKS(500)); // keep same rate for now
+        vTaskDelay(pdMS_TO_TICKS(10)); // keep same rate for now
     }
 }

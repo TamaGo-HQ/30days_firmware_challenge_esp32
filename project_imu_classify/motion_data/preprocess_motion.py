@@ -9,7 +9,7 @@ from scipy.signal import butter, filtfilt
 FS = 100            # sampling frequency in Hz (adjust if needed)
 CUTOFF = 10         # low-pass cutoff frequency (Hz)
 
-FILE = "motion_data/tap.csv"   # change file to inspect others
+FILE = "vibration.csv"   # change file to inspect others
 
 # ----------------------------
 # Load CSV
@@ -48,6 +48,24 @@ def lowpass(signal, cutoff, fs, order=4):
 
 accel_filtered = lowpass(accel_motion, CUTOFF, FS)
 gyro_filtered = lowpass(gyro_mag, CUTOFF, FS)
+
+# ----------------------------
+# Save processed signals
+# ----------------------------
+output_file = FILE.replace(".csv", "_processed.csv")
+
+with open(output_file, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["time_ms", "accel_filtered", "gyro_filtered"])
+    
+    for i in range(len(time_ms)):
+        writer.writerow([
+            time_ms[i],
+            accel_filtered[i],
+            gyro_filtered[i]
+        ])
+
+print(f"Processed data saved to {output_file}")
 
 # ----------------------------
 # Plot results

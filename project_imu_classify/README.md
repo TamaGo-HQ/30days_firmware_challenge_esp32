@@ -169,7 +169,7 @@ Resources:
 
 ### Day 2 : Data Logging & Signal Visualization
 
-## End-of-day deliverables (non-negotiable)
+**End-of-day deliverables (non-negotiable)**
 
 By the end of Day 2, you should have:
 
@@ -416,3 +416,300 @@ pip show matplotlib
 ```
 
 Once the .py works, you’ll get 4 graphs depicting the variation of the acceleration and rotation magnitudes (in g and dps).
+
+### Day3: Preprocessing
+
+**End-of-day deliverables (non-negotiable)**
+
+By the end of Day 3, we should have:
+
+- For each motion CSV:
+    - an accelerometer signal without the gravity component
+    - a filtered signal (low pass)
+    - a plot of raw vs cleaned signal
+
+**Recap**
+
+For the accelerometer magnitude, the measured signal is
+
+```c
+|a| = motion + gravity + noise
+```
+
+We want **motion only.**
+
+Our strategy is simple. We remove the gravity component by substracting the mean (eliminate the DC) and remove the noise by applying a low-pass filter.
+
+**Python Preprocessing Script**
+
+We create a new file: preprocess_motion.py
+We run this scirpt for each csv file and we’ll get the folllowing processed signals:
+
+![Slow Signal : Filtered vs Raw](attachment:4a0d3a51-f09b-4914-84d0-267dd5a742ac:slow_filtered_vs_raw.png)
+
+Slow Signal : Filtered vs Raw
+
+![Stationary Signal : Filtered vs Raw](attachment:aa41c2e1-5f10-427f-bfc8-3f83118227db:stationary_filtered_vs_raw.png)
+
+Stationary Signal : Filtered vs Raw
+
+![Vibration Signal : Filtered vs Raw](attachment:38b67bb4-4249-42a6-8dbf-f1fc6cb93564:vibration_filtered_vs_raw.png)
+
+Vibration Signal : Filtered vs Raw
+
+![Tap Signal : Filtered vs Raw](attachment:9b2b43e9-dd05-4536-8a8b-0e4f47e4767e:impact_filtered_vs_raw.png)
+
+Tap Signal : Filtered vs Raw
+
+We oberve clearly in the accelerometer signal that the gravity is removed, the mean of the filtered signal is near 0.
+
+For both signals (accelerometer and gyroscope), the oscillations have lower amplitude, yet the spikes are not flattened.
+
+### Day4 : Feature Extraction
+
+**End-of-Day Deliverables**
+
+By the end of today, you must have:
+
+- Feature vectors computed for all 4 motion types
+- Features saved in a CSV file
+- Clear numeric differences between motion classes
+- Intuition: “This feature separates X from Y”
+
+We’ll transform each motion signal into feauture vectores per time window.
+
+So instead of having **1000** **samples of waveform**, we’ll have **20 windows → 20 rows of numeric features**
+
+Let’ understand the terms we’re gonna use.
+
+When :
+
+- the sampling rate = 100 Hz
+- and we choose a window size of 0.5 seconds
+
+→ We’ll habe 50 samples per window and 20 windows in total for 1000 samples.
+
+For each window, we capture
+
+| Feature | Meaning |
+| --- | --- |
+| RMS | Energy / intensity |
+| Variance | Variability |
+| Peak | Sudden spikes |
+| Zero-crossing rate | Oscillation frequency |
+
+RMS = how strong is the movement?
+
+- Stationary → very low
+- Fast vibration → high
+
+Variance = how much does is change?
+
+- Smooth slow movement → low variance
+- Shaking → high variance
+
+Peak Value = was there a sudden event?
+
+- Impact → very high peak
+- Slow movement → low peak
+
+Zero-crossing rate = how often does it oscillate?
+
+- Vibration → many crossings
+- Stationary → almost none
+
+**Implementation**
+
+```c
+import numpy as np
+import csv
+import os
+from scipy.signal import butter, filtfilt
+
+# -----------------------------
+# Parameters
+# -----------------------------
+FS = 100                 # Sampling frequency (Hz)
+WINDOW_SIZE = 0.5        # seconds
+SAMPLES_PER_WINDOW = int(FS * WINDOW_SIZE)
+CUTOFF = 10              # Low-pass cutoff frequency
+
+DATA_FOLDER = "motion_data"
+OUTPUT_FILE = "features.csv"
+
+# -----------------------------
+# Low-pass filter
+# -----------------------------
+def lowpass(signal, cutoff, fs, order=4):
+    nyq = 0.5 * fs
+    norm_cutoff = cutoff / nyq
+    b, a = butter(order, norm_cutoff, btype="low")
+    return filtfilt(b, a, signal)
+
+# -----------------------------
+# Feature functions
+# -----------------------------
+def compute_features(window):
+    rms = np.sqrt(np.mean(window**2))
+    variance = np.var(window)
+    peak = np.max(np.abs(window))
+
+    # zero-crossing rate
+    zero_crossings = np.where(np.diff(np.sign(window)))[0]
+    zcr = len(zero_crossings) / len(window)
+
+    return rms, variance, peak, zcr
+
+# -----------------------------
+# Process one file
+# -----------------------------
+def process_file(filepath, label):
+    time = []
+    accel = []
+    gyro = []
+
+    with open(filepath, "r") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            t, a, g = row
+            time.append(float(t))
+            accel.append(float(a))
+            gyro.append(float(g))
+
+    accel = np.array(accel)
+    gyro = np.array(gyro)
+
+    # ---- Preprocessing (Day 3 pipeline) ----
+    accel_motion = accel - np.mean(accel)
+    accel_filtered = lowpass(accel_motion, CUTOFF, FS)
+    gyro_filtered = lowpass(gyro, CUTOFF, FS)
+
+    features = []
+
+    # ---- Windowing ----
+    for start in range(0, len(accel_filtered) - SAMPLES_PER_WINDOW, SAMPLES_PER_WINDOW):
+        end = start + SAMPLES_PER_WINDOW
+
+        acc_win = accel_filtered[start:end]
+        gyro_win = gyro_filtered[start:end]
+
+        acc_features = compute_features(acc_win)
+        gyro_features = compute_features(gyro_win)
+
+        features.append([
+            *acc_features,
+            *gyro_features,
+            label
+        ])
+
+    return features
+
+# -----------------------------
+# Main
+# -----------------------------
+all_features = []
+
+motion_files = {
+    "stationary.csv": "stationary",
+    "slow.csv": "slow",
+    "fast.csv": "fast",
+    "impact.csv": "impact"
+}
+
+for filename, label in motion_files.items():
+    filepath = os.path.join(DATA_FOLDER, filename)
+    feats = process_file(filepath, label)
+    all_features.extend(feats)
+
+# Save to CSV
+with open(OUTPUT_FILE, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        "acc_rms", "acc_var", "acc_peak", "acc_zcr",
+        "gyro_rms", "gyro_var", "gyro_peak", "gyro_zcr",
+        "label"
+    ]
+    writer.writerows(all_features)
+
+print("Feature extraction complete.")
+print(f"Saved to {OUTPUT_FILE}")
+```
+
+After running this code, open features.csv 
+
+You should see rows like this 
+
+```c
+0.02,0.0001,0.05,0.02,1.3,0.5,4.0,0.1,stationary
+```
+
+Congrats! you just created feautre vectors!
+
+Let’s draw some plots to understand these numbers.
+
+Run 
+
+```c
+python analyze_features.py
+```
+
+This code produces 6 “boxplots”.
+
+First we should learn how to read a boxplot
+
+In our case, each rectangle represents one motion class.
+
+Inside each box:
+
+```css
+   ───────         ← top whisker
+      │
+   ┌────────┐
+   │        │
+   │        │
+   └────────┘
+      │
+   ───────         ← bottom whisker
+```
+
+**The box** represents the **middle 50% of your data**.
+
+- Bottom of box → 25th percentile
+- Top of box → 75th percentile
+
+This tells you: “Where most of the values lie.”
+
+**The horizontal line** inside the box = **Median**
+
+This is the middle value.
+
+If you want a single representative number per class → look at the median.
+
+**The Whiskers**
+
+The vertical lines extending from the box show how far the data spreads (excluding extreme outliers)
+
+They indicate variability.
+
+**Tiny Circles**
+
+These are **outliers, v**alues far away from the normal distribution.
+
+![acc_peak.png](attachment:bab9aae6-7d9b-4f58-8e1f-1d960c6fcc06:acc_peak.png)
+
+![acc_rms.png](attachment:c6711e73-2cb9-49d4-9f27-50c2fec4d41b:acc_rms.png)
+
+![acc_var.png](attachment:48a83016-dad5-4aaa-b33a-1ec409bd104d:acc_var.png)
+
+![gyro_var.png](attachment:df625b34-bce9-4c0b-a69d-c5e6b98689a2:gyro_var.png)
+
+![gyro_peak.png](attachment:473c3e76-557d-432c-8c0a-89998f4d4b36:gyro_peak.png)
+
+![gyro_rms.png](attachment:143ce125-2c5f-469f-a8a7-b2825e5e4cf1:gyro_rms.png)
+
+- many outliers in the gyro’s peak and rms values.
+- the vibration always has the largest box, it never overlapst with other boxes.
+- the stationary’s box is always flat compared to other signals.
+- what clearly disctincts the slow motion from the stationary motion is : the slow box is much wider in the gyro’s peak and the gyro’s rms plots and the whiskers are also wider.
+
+If i had to choose only 2 features for classification, I’d choose gyro_peak and acc_rms.

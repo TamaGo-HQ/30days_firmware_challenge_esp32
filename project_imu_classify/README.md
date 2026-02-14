@@ -444,22 +444,32 @@ Our strategy is simple. We remove the gravity component by substracting the mean
 
 We create a new file: preprocess_motion.py
 We run this scirpt for each csv file and we’ll get the folllowing processed signals:
+  <img src="assets/slow_filtered_vs_raw.png"><br>
+<div align="center">
+  <strong>Slow Signal : Filtered vs Raw</strong>
+</div>
 
-![Slow Signal : Filtered vs Raw](attachment:4a0d3a51-f09b-4914-84d0-267dd5a742ac:slow_filtered_vs_raw.png)
+<br>
 
-Slow Signal : Filtered vs Raw
+  <img src="assets/stationary_filtered_vs_raw.png"><br>
+<div align="center">
+  <strong>Stationary Signal : Filtered vs Raw</strong>
+</div>
 
-![Stationary Signal : Filtered vs Raw](attachment:aa41c2e1-5f10-427f-bfc8-3f83118227db:stationary_filtered_vs_raw.png)
+<br>
 
-Stationary Signal : Filtered vs Raw
+  <img src="assets/vibration_filtered_vs_raw.png"><br>
+<div align="center">
+  <strong>Vibration Signal : Filtered vs Raw</strong>
+</div>
 
-![Vibration Signal : Filtered vs Raw](attachment:38b67bb4-4249-42a6-8dbf-f1fc6cb93564:vibration_filtered_vs_raw.png)
+<br>
 
-Vibration Signal : Filtered vs Raw
+  <img src="assets/impact_filtered_vs_raw.png"><br>
+<div align="center">
+  <strong>Tap Signal : Filtered vs Raw</strong>
+</div>
 
-![Tap Signal : Filtered vs Raw](attachment:9b2b43e9-dd05-4536-8a8b-0e4f47e4767e:impact_filtered_vs_raw.png)
-
-Tap Signal : Filtered vs Raw
 
 We oberve clearly in the accelerometer signal that the gravity is removed, the mean of the filtered signal is near 0.
 
@@ -695,17 +705,31 @@ They indicate variability.
 
 These are **outliers, v**alues far away from the normal distribution.
 
-![acc_peak.png](attachment:bab9aae6-7d9b-4f58-8e1f-1d960c6fcc06:acc_peak.png)
+<table align="center" style="border: 1px solid white; border-collapse: collapse;">
+  <tr>
+    <td style="border: 1px solid white; padding: 5px;">
+      <img src="assets/acc_peak.png" height="140">
+    </td>
+    <td style="border: 1px solid white; padding: 5px;">
+      <img src="assets/acc_rms.png" height="140">
+    </td>
+    <td style="border: 1px solid white; padding: 5px;">
+      <img src="assets/acc_var.png" height="140">
+    </td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid white; padding: 5px;">
+      <img src="assets/gyro_var.png" height="140">
+    </td>
+    <td style="border: 1px solid white; padding: 5px;">
+      <img src="assets/gyro_peak.png" height="140">
+    </td>
+    <td style="border: 1px solid white; padding: 5px;">
+      <img src="assets/gyro_rms.png" height="140">
+    </td>
+  </tr>
+</table>
 
-![acc_rms.png](attachment:c6711e73-2cb9-49d4-9f27-50c2fec4d41b:acc_rms.png)
-
-![acc_var.png](attachment:48a83016-dad5-4aaa-b33a-1ec409bd104d:acc_var.png)
-
-![gyro_var.png](attachment:df625b34-bce9-4c0b-a69d-c5e6b98689a2:gyro_var.png)
-
-![gyro_peak.png](attachment:473c3e76-557d-432c-8c0a-89998f4d4b36:gyro_peak.png)
-
-![gyro_rms.png](attachment:143ce125-2c5f-469f-a8a7-b2825e5e4cf1:gyro_rms.png)
 
 - many outliers in the gyro’s peak and rms values.
 - the vibration always has the largest box, it never overlapst with other boxes.
@@ -797,9 +821,9 @@ This is the classification block I built. I chose these values after analysing y
 
 Build, flash and monitor.
 
-I’ve uploaded the first result on youtube and can check the video through this link (does this make me a youtuber now? hihi) 
+I’ve uploaded the first result on youtube and can check the video through [this link](https://youtube.com/shorts/05wMjkwkRqQ) (does this make me a youtuber now? hihi) 
 
-[![Video Thumbnail](https://youtube.com/shorts/05wMjkwkRqQ)
+
 
 The problem with this system is that it classifies tapping as slow movement… 
 

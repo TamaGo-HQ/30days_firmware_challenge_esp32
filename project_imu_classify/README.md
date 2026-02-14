@@ -713,3 +713,94 @@ These are **outliers, v**alues far away from the normal distribution.
 - what clearly disctincts the slow motion from the stationary motion is : the slow box is much wider in the gyro’s peak and the gyro’s rms plots and the whiskers are also wider.
 
 If i had to choose only 2 features for classification, I’d choose gyro_peak and acc_rms.
+
+### Day 5 : Rule-based Classifier
+
+The goal is to print in real time
+
+```c
+Stationary
+Slow movement
+Fast movement / Vibration
+Impact
+```
+
+based on windowed feautre extraction. The window size is 0.5 seconds with a sampling rate of 100 Hz. So we’ll have 50 samples per window.
+
+The extracted features are the gyro signal peak and the accelerometer signal’s rms.
+
+We chose the the signals that allow the most exact classification of the different motions based on the study we conducted yesterday.
+
+These are the helper functions we’ll use:
+
+```c
+float compute_rms(float *buffer, int size)
+{
+    float sum = 0;
+    for (int i = 0; i < size; i++) {
+        sum += buffer[i] * buffer[i];
+    }
+    return sqrtf(sum / size);
+}
+
+float compute_peak(float *buffer, int size)
+{
+    float peak = 0;
+    for (int i = 0; i < size; i++) {
+        float val = fabsf(buffer[i]);
+        if (val > peak)
+            peak = val;
+    }
+    return peak;
+}
+```
+
+For the signal processing, we’ll follow the same procesing we’ve done in the previous study : a low pass filter with a cutoff frequency of 10Hz and the elimination of the gravity dc component in the acceloremeter signal’s magnitude.
+
+We’ll implement an Exponential low-pass filter:
+
+```c
+float lowpass_filter(float input, float prev_output, float alpha)
+{
+    return alpha * input + (1 - alpha) * prev_output;
+}
+```
+
+Where 
+
+```c
+alpha = dt / (RC + dt)
+RC = 1 / (2π * cutoff)
+dt = 1 / FS
+```
+
+For our case:
+
+```c
+FS = 100 Hz
+cutoff = 10 Hz
+
+RC ≈ 0.016
+dt = 0.01
+
+alpha ≈ 0.38
+```
+
+This is the classification block I built. I chose these values after analysing yesterday’s graph and drawing threshholds to classify the signal features.
+
+```c
+1) if acc_rms > 0.2          → Vibration
+2) else if gyro_peak > 50    → Tap
+3) else if gyro_peak < 10    → Stationary
+4) else                      → Slow movement
+```
+
+Build, flash and monitor.
+
+I’ve uploaded the first result on youtube and can check the video through this link (does this make me a youtuber now? hihi) 
+
+[![Video Thumbnail](https://youtube.com/shorts/05wMjkwkRqQ)
+
+The problem with this system is that it classifies tapping as slow movement… 
+
+Wel’ll have to fine tune it next and make a proper architecture for our code.
